@@ -4,22 +4,22 @@ from __future__ import annotations
 import config
 
 
-def test_default_detail_is_balanced(monkeypatch, tmp_path):
+def test_default_detail_is_efficient(monkeypatch, tmp_path):
     monkeypatch.delenv("WATCH_DETAIL", raising=False)
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "missing.env")
-    assert config.get_config()["detail"] == "balanced"
+    assert config.get_config()["detail"] == "efficient"
 
 
 def test_env_overrides_detail(monkeypatch, tmp_path):
-    monkeypatch.setenv("WATCH_DETAIL", "efficient")
+    monkeypatch.setenv("WATCH_DETAIL", "balanced")
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "missing.env")
-    assert config.get_config()["detail"] == "efficient"
+    assert config.get_config()["detail"] == "balanced"
 
 
 def test_invalid_detail_falls_back_to_default(monkeypatch, tmp_path):
     monkeypatch.setenv("WATCH_DETAIL", "bogus")
     monkeypatch.setattr(config, "CONFIG_FILE", tmp_path / "missing.env")
-    assert config.get_config()["detail"] == "balanced"
+    assert config.get_config()["detail"] == "efficient"
 
 
 def test_get_config_keys(monkeypatch, tmp_path):
@@ -76,9 +76,9 @@ def test_user_file_beats_project_file(monkeypatch):
     assert config.load_api_key() == ('groq', 'environment-test')
 
 
-def test_engine_defaults_to_auto_and_local_without_key():
+def test_engine_defaults_to_local():
     cfg = config.get_config()
-    assert cfg['engine'] == 'auto'
+    assert cfg['engine'] == 'local'
     assert cfg['gemini_model'] == 'gemini-3.7-flash'
     assert cfg['gemini_timeout'] == 600.0
     assert config.load_gemini_key() is None

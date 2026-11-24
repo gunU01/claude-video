@@ -16,7 +16,7 @@ def binaries_present(monkeypatch):
 def test_json_reports_watch_detail(monkeypatch, capsys):
     monkeypatch.setattr(setup, '_probe', lambda cmd: {'ok': True, 'output': 'test'})
     setup.cmd_json()
-    assert json.loads(capsys.readouterr().out)['watch_detail'] == 'balanced'
+    assert json.loads(capsys.readouterr().out)['watch_detail'] == 'efficient'
 
 
 def test_keyless_completed_setup_proceeds_silently(capsys):
@@ -109,6 +109,7 @@ def test_none_backend_completion():
 
 def test_gemini_engine_is_ready_without_media_binaries(monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     monkeypatch.setattr(setup, '_check_binaries', lambda: list(setup.REQUIRED_BINARIES))
     status = setup._status()
     assert status['engine'] == 'gemini' and status['configured_engine'] == 'auto'

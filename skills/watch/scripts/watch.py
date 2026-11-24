@@ -91,7 +91,7 @@ def run_gemini(args, config, key, start_sec, end_sec, auth) -> int:
     return 0
 
 
-def main() -> int:
+def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(
         prog="watch",
         description="Download a video, extract auto-scaled frames, and surface the transcript.",
@@ -141,12 +141,148 @@ def main() -> int:
     cookies.add_argument("--cookies-from-browser", default=None, help="Explicit yt-dlp browser selector")
     ap.add_argument("--engine", choices=["auto", "gemini", "local"], default=None,
                     help="gemini: Google watches the video and answers (needs GEMINI_API_KEY). "
-                         "local: frames + transcript on this machine. Default auto: gemini when a key exists.")
+                         "local: frames + transcript on this machine. Default local (this fork); set auto to use gemini when a key exists.")
     ap.add_argument("--question", default=None,
                     help="The user's question. Sent to Gemini on a gemini run; unused by the local engine.")
     args = ap.parse_args()
     if args.no_whisper and args.whisper:
         ap.error("--no-whisper conflicts with --whisper")
+    return args
+
+
+def print_report(
+    *,
+    args, work, video_path, visual_error, errors, frames, cue_frames, cue_meta, frame_meta,
+    transcript_segments, transcript_text, transcript_source, transcript_state, track_available,
+    gaps, info, meta, full_duration, effective_start, effective_end, effective_duration, focused,
+    detail, detail_budget, target,
+) -> None:
+    print()
+    print("# watch: video report")
+    print()
+    print(f"- **Source:** {args.source}")
+    if video_path:
+        print(f"- **Local media:** `{video_path}`")
+    if visual_error:
+        print(f"- **Visual status:** {visual_error}")
+    if errors:
+        print("- **Result:** partial evidence" if frames or transcript_segments else "- **Result:** unavailable evidence")
+    if info.get("title"):
+        print(f"- **Title:** {info['title']}")
+    if info.get("uploader"):
+        print(f"- **Uploader:** {info['uploader']}")
+    print(f"- **Duration:** {format_time(full_duration)} ({full_duration:.1f}s)")
+    if focused:
+        print(
+            f"- **Focus range:** {format_time(effective_start)} → {format_time(effective_end)} "
+            f"({effective_duration:.1f}s)"
+        )
+    if meta.get("width") and meta.get("height"):
+        print(f"- **Resolution:** {meta['width']}x{meta['height']} ({meta.get('codec') or 'unknown codec'})")
+    range_mode = "focused" if focused else "full"
+    print(f"- **Detail:** {detail}")
+    detail_count = frame_meta.get("selected_count", 0)
+    if detail != "transcript":
+        cap_label = "unlimited" if detail_budget is None else str(detail_budget)
+        engine = frame_meta.get("engine", "scene")
+        fallback = " fallback" if frame_meta.get("fallback") else ""
+        deduped = frame_meta.get("deduped_count", 0)
+        dedup_note = f", {deduped} near-duplicate{'s' if deduped != 1 else ''} dropped" if deduped else ""
+        print(
+            f"- **Frames:** {detail_count} selected from {frame_meta.get('candidate_count', detail_count)} "
+            f"candidates ({engine}{fallback}{dedup_note}, {range_mode} range, budget {target}, cap {cap_label})"
+        )
+    elif not cue_frames:
+        print("- **Frames:** skipped (transcript detail)")
+    if cue_frames:
+        dropped = cue_meta.get("dropped_out_of_window", 0)
+        drop_note = f", {dropped} dropped outside range" if dropped else ""
+        print(
+            f"- **Cue frames:** {len(cue_frames)} at transcript-flagged timestamps "
+            f"(transcript-cue{drop_note})"
+        )
+    if frames:
+        print(f"- **Frame size:** max {args.resolution}px wide, max 1998px tall")
+    if transcript_segments:
+        in_range = " in range" if focused else ""
+        print(
+            f"- **Transcript:** {len(transcript_segments)} segments{in_range} "
+            f"(via {transcript_source or 'captions'})"
+        )
+    else:
+        print(f"- **Transcript:** {transcript_state}")
+    if gaps:
+        print("- **Transcript status:** partial; missing intervals:")
+        for gap in gaps:
+            end = gap["end"] if gap["end"] is not None else full_duration
+            print(f"  - {format_time(gap['start'])} → {format_time(end)}")
+
+    if detail == "token-burner" and len(frames) > 250:
+        print()
+        print(
+            f"> **Warning:** token-burner detail selected {len(frames)} frames. "
+            "This may use a large number of image tokens."
+        )
+
+    if not focused and full_duration > 600 and detail not in ("transcript", "token-burner"):
+        mins = int(full_duration // 60)
+        print()
+        print(
+            f"> **Warning:** This is a {mins}-minute video. Frame coverage is sparse at this length "
+            f"under `{detail}` detail — its cap spreads thin across the full clip. For better results, "
+            "re-run with `--start HH:MM:SS --end HH:MM:SS` to zoom into a section, or use "
+            "`--detail token-burner` to keep every scene-change frame across the whole video."
+        )
+
+    print()
+    print("## Frames")
+    print()
+    if frames:
+        print(f"Frames live at: `{work / 'frames'}`")
+        print()
+        print(
+            "**Read each frame path below with the Read tool to view the image.** "
+            "Frames are in chronological order; `t=MM:SS` is the absolute timestamp in the source video."
+        )
+        print()
+        for frame in frames:
+            print(
+                f"- `{frame['path']}` "
+                f"(t={format_time(frame['timestamp_seconds'])}, reason={frame.get('reason', 'selected')})"
+            )
+    else:
+        print("_No frames extracted._")
+
+    print()
+    print("## Transcript")
+    print()
+    if transcript_text:
+        label = transcript_source or "captions"
+        if focused:
+            print(f"_Source: {label}. Filtered to {format_time(effective_start)} → {format_time(effective_end)}:_")
+        else:
+            print(f"_Source: {label}._")
+        print()
+        print("```")
+        print(transcript_text)
+        print("```")
+    else:
+        print(f"_{transcript_state.capitalize()}._")
+        if detail == "transcript" and not track_available:
+            print("_Re-run with `--detail balanced` for visual evidence, or configure a transcription backend with setup.py._")
+    if errors:
+        print()
+        print("## Unavailable evidence")
+        for error in errors:
+            print(f"- {error}")
+
+    print()
+    print("---")
+    print(f"_Work dir: `{work}` — delete when done._")
+
+
+def main() -> int:
+    args = parse_args()
 
     config = get_config(backend_override="none" if args.no_whisper else args.whisper)
     detail = args.detail or config["detail"]
@@ -295,129 +431,16 @@ def main() -> int:
         print(f"[watch] {error}", file=sys.stderr)
 
     info = dl.get("info") or {}
-
-    print()
-    print("# watch: video report")
-    print()
-    print(f"- **Source:** {args.source}")
-    if video_path:
-        print(f"- **Local media:** `{video_path}`")
-    if visual_error:
-        print(f"- **Visual status:** {visual_error}")
-    if errors:
-        print("- **Result:** partial evidence" if frames or transcript_segments else "- **Result:** unavailable evidence")
-    if info.get("title"):
-        print(f"- **Title:** {info['title']}")
-    if info.get("uploader"):
-        print(f"- **Uploader:** {info['uploader']}")
-    print(f"- **Duration:** {format_time(full_duration)} ({full_duration:.1f}s)")
-    if focused:
-        print(
-            f"- **Focus range:** {format_time(effective_start)} → {format_time(effective_end)} "
-            f"({effective_duration:.1f}s)"
-        )
-    if meta.get("width") and meta.get("height"):
-        print(f"- **Resolution:** {meta['width']}x{meta['height']} ({meta.get('codec') or 'unknown codec'})")
-    range_mode = "focused" if focused else "full"
-    print(f"- **Detail:** {detail}")
-    detail_count = frame_meta.get("selected_count", 0)
-    if detail != "transcript":
-        cap_label = "unlimited" if detail_budget is None else str(detail_budget)
-        engine = frame_meta.get("engine", "scene")
-        fallback = " fallback" if frame_meta.get("fallback") else ""
-        deduped = frame_meta.get("deduped_count", 0)
-        dedup_note = f", {deduped} near-duplicate{'s' if deduped != 1 else ''} dropped" if deduped else ""
-        print(
-            f"- **Frames:** {detail_count} selected from {frame_meta.get('candidate_count', detail_count)} "
-            f"candidates ({engine}{fallback}{dedup_note}, {range_mode} range, budget {target}, cap {cap_label})"
-        )
-    elif not cue_frames:
-        print("- **Frames:** skipped (transcript detail)")
-    if cue_frames:
-        dropped = cue_meta.get("dropped_out_of_window", 0)
-        drop_note = f", {dropped} dropped outside range" if dropped else ""
-        print(
-            f"- **Cue frames:** {len(cue_frames)} at transcript-flagged timestamps "
-            f"(transcript-cue{drop_note})"
-        )
-    if frames:
-        print(f"- **Frame size:** max {args.resolution}px wide, max 1998px tall")
-    if transcript_segments:
-        in_range = " in range" if focused else ""
-        print(
-            f"- **Transcript:** {len(transcript_segments)} segments{in_range} "
-            f"(via {transcript_source or 'captions'})"
-        )
-    else:
-        print(f"- **Transcript:** {transcript_state}")
-    if gaps:
-        print("- **Transcript status:** partial; missing intervals:")
-        for gap in gaps:
-            end = gap["end"] if gap["end"] is not None else full_duration
-            print(f"  - {format_time(gap['start'])} → {format_time(end)}")
-
-    if detail == "token-burner" and len(frames) > 250:
-        print()
-        print(
-            f"> **Warning:** token-burner detail selected {len(frames)} frames. "
-            "This may use a large number of image tokens."
-        )
-
-    if not focused and full_duration > 600 and detail not in ("transcript", "token-burner"):
-        mins = int(full_duration // 60)
-        print()
-        print(
-            f"> **Warning:** This is a {mins}-minute video. Frame coverage is sparse at this length "
-            f"under `{detail}` detail — its cap spreads thin across the full clip. For better results, "
-            "re-run with `--start HH:MM:SS --end HH:MM:SS` to zoom into a section, or use "
-            "`--detail token-burner` to keep every scene-change frame across the whole video."
-        )
-
-    print()
-    print("## Frames")
-    print()
-    if frames:
-        print(f"Frames live at: `{work / 'frames'}`")
-        print()
-        print(
-            "**Read each frame path below with the Read tool to view the image.** "
-            "Frames are in chronological order; `t=MM:SS` is the absolute timestamp in the source video."
-        )
-        print()
-        for frame in frames:
-            print(
-                f"- `{frame['path']}` "
-                f"(t={format_time(frame['timestamp_seconds'])}, reason={frame.get('reason', 'selected')})"
-            )
-    else:
-        print("_No frames extracted._")
-
-    print()
-    print("## Transcript")
-    print()
-    if transcript_text:
-        label = transcript_source or "captions"
-        if focused:
-            print(f"_Source: {label}. Filtered to {format_time(effective_start)} → {format_time(effective_end)}:_")
-        else:
-            print(f"_Source: {label}._")
-        print()
-        print("```")
-        print(transcript_text)
-        print("```")
-    else:
-        print(f"_{transcript_state.capitalize()}._")
-        if detail == "transcript" and not track_available:
-            print("_Re-run with `--detail balanced` for visual evidence, or configure a transcription backend with setup.py._")
-    if errors:
-        print()
-        print("## Unavailable evidence")
-        for error in errors:
-            print(f"- {error}")
-
-    print()
-    print("---")
-    print(f"_Work dir: `{work}` — delete when done._")
+    print_report(
+        args=args, work=work, video_path=video_path, visual_error=visual_error, errors=errors,
+        frames=frames, cue_frames=cue_frames, cue_meta=cue_meta, frame_meta=frame_meta,
+        transcript_segments=transcript_segments, transcript_text=transcript_text,
+        transcript_source=transcript_source, transcript_state=transcript_state,
+        track_available=track_available, gaps=gaps, info=info, meta=meta,
+        full_duration=full_duration, effective_start=effective_start, effective_end=effective_end,
+        effective_duration=effective_duration, focused=focused, detail=detail,
+        detail_budget=detail_budget, target=target,
+    )
 
     return 1 if errors and not frames and not transcript_segments and not track_available else 0
 

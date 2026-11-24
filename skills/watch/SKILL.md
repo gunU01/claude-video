@@ -60,7 +60,7 @@ Ask for the default detail, lightest to heaviest:
 3. `balanced` (recommended): scene-aware frames, cap 100.
 4. `token-burner`: scene-aware, uncapped; high image cost.
 
-If the detail question is skipped, retain `balanced`.
+If the detail question is skipped, retain `efficient` (this fork's default).
 
 Then ask: **For videos without captions, how should watch transcribe?** Present:
 

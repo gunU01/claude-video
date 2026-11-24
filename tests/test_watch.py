@@ -50,10 +50,10 @@ def test_flag_overrides_env(cut_clip: Path):
     assert "(keyframe" in out
 
 
-def test_default_is_balanced(cut_clip: Path):
+def test_default_is_efficient(cut_clip: Path):
     out = _run(cut_clip)  # no flag, WATCH_DETAIL cleared
-    assert "**Detail:** balanced" in out
-    assert "(scene" in out
+    assert "**Detail:** efficient" in out
+    assert "(keyframe" in out
 
 
 def test_timestamps_add_cue_frames_to_detail(cut_clip: Path):
@@ -202,6 +202,7 @@ def test_youtube_with_key_uses_gemini_and_touches_nothing_local(monkeypatch, cap
     seen = {}
     _gemini_answer(monkeypatch, seen)
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     for name in ('fetch_captions', 'download', 'get_metadata', 'transcribe_video'):
         monkeypatch.setattr(watch, name, lambda *a, _n=name, **kw: pytest.fail(f'{_n} must not run on a Gemini YouTube run'))
     monkeypatch.setattr(sys, 'argv', ['watch', 'https://youtu.be/abc', '--question', 'When does it change?', '--detail', 'efficient'])
@@ -220,6 +221,7 @@ def test_local_file_is_uploaded_asked_then_deleted(monkeypatch, capsys, static_c
     seen, deleted = {}, []
     _gemini_answer(monkeypatch, seen)
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     monkeypatch.setattr(gemini, 'upload_file', lambda path, key, **kw: {'name': 'files/abc', 'uri': 'https://g/files/abc', 'mime_type': 'video/mp4'})
     monkeypatch.setattr(gemini, 'delete_file', lambda name, key: deleted.append(name))
     monkeypatch.setattr(sys, 'argv', ['watch', str(static_clip), '--start', '0:20', '--end', '0:30'])
@@ -234,6 +236,7 @@ def test_upload_is_deleted_even_when_the_question_fails(monkeypatch, capsys, sta
     import gemini
     deleted = []
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     monkeypatch.setattr(gemini, 'upload_file', lambda path, key, **kw: {'name': 'files/abc', 'uri': 'u', 'mime_type': 'video/mp4'})
     monkeypatch.setattr(gemini, 'delete_file', lambda name, key: deleted.append(name))
     def boom(*a, **kw):
@@ -250,6 +253,7 @@ def test_upload_is_deleted_even_when_the_question_fails(monkeypatch, capsys, sta
 def test_engine_local_never_contacts_gemini(monkeypatch, static_clip, capsys):
     import gemini
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     for name in ('ask', 'upload_file'):
         monkeypatch.setattr(gemini, name, lambda *a, **kw: pytest.fail('local engine must not contact Google'))
     monkeypatch.setattr(sys, 'argv', ['watch', str(static_clip), '--engine', 'local', '--no-whisper'])
@@ -274,6 +278,7 @@ def test_explicit_gemini_without_key_fails_before_any_work(monkeypatch):
 def test_failed_upload_is_reported_honestly_and_work_dir_removed(monkeypatch, capsys, static_clip, tmp_path):
     import gemini
     monkeypatch.setenv('GEMINI_API_KEY', 'unit-key')
+    monkeypatch.setenv('WATCH_ENGINE', 'auto')
     def boom(path, key, **kw):
         raise SystemExit('Gemini upload: nope. No local fallback was attempted; rerun with --engine local')
     monkeypatch.setattr(gemini, 'upload_file', boom)
