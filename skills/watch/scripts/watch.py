@@ -135,6 +135,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable near-duplicate frame removal. Keeps visually identical "
              "frames (static screen recordings, held slides) instead of collapsing them.",
     )
+    ap.add_argument(
+        "--transcript-file",
+        action="store_true",
+        help="Write the transcript to a file in the working dir and print its path instead of the "
+             "full text, so long videos can be read in parts.",
+    )
     ap.add_argument("--sub-lang", default=None, help="Exact caption language preference (default auto/native)")
     cookies = ap.add_mutually_exclusive_group()
     cookies.add_argument("--cookies", default=None, help="Explicit cookie file (yt-dlp may update this jar)")
@@ -263,9 +269,16 @@ def print_report(
         else:
             print(f"_Source: {label}._")
         print()
-        print("```")
-        print(transcript_text)
-        print("```")
+        if args.transcript_file:
+            path = work / "transcript.txt"
+            path.write_text(transcript_text + "\n", encoding="utf-8")
+            print(f"Full transcript ({len(transcript_segments)} segments, {len(transcript_text)} characters) "
+                  f"saved to `{path}`. Read it with the Read tool in parts (offset/limit); "
+                  "lines are `[MM:SS] text` in chronological order.")
+        else:
+            print("```")
+            print(transcript_text)
+            print("```")
     else:
         print(f"_{transcript_state.capitalize()}._")
         if detail == "transcript" and not track_available:

@@ -289,3 +289,25 @@ def test_failed_upload_is_reported_honestly_and_work_dir_removed(monkeypatch, ca
     assert 'URL sent to Google' not in out and 'upload to Google failed' in out
     assert out_dir.is_dir() and list(out_dir.iterdir()) == [], 'the run-owned work dir must be removed'
     assert static_clip.is_file(), 'the user source file is never deleted'
+
+
+def test_transcript_file_prints_a_path_instead_of_the_text(monkeypatch, tmp_path, capsys):
+    _caption_context(monkeypatch, tmp_path, '00:00.000 --> 00:05.000\nhello there\n\n00:05.000 --> 00:09.000\nsecond line\n')
+    monkeypatch.setattr(watch, 'download', lambda *a, **kw: pytest.fail('transcript-only must not download'))
+    out_dir = tmp_path / 'work'
+    monkeypatch.setattr(sys, 'argv', ['watch', 'https://example.com/video', '--detail', 'transcript',
+                                      '--transcript-file', '--out-dir', str(out_dir)])
+    assert watch.main() == 0
+    out = capsys.readouterr().out
+    section = out.split('## Transcript', 1)[1]
+    assert 'hello there' not in section and 'Full transcript (2 segments' in section
+    saved = next(out_dir.glob('watch-*/transcript.txt'))
+    assert saved.read_text(encoding='utf-8') == '[00:00] hello there\n[00:05] second line\n'
+
+
+def test_transcript_is_inline_by_default(monkeypatch, tmp_path, capsys):
+    _caption_context(monkeypatch, tmp_path, '00:00.000 --> 00:05.000\nhello there\n')
+    monkeypatch.setattr(watch, 'download', lambda *a, **kw: pytest.fail('transcript-only must not download'))
+    monkeypatch.setattr(sys, 'argv', ['watch', 'https://example.com/video', '--detail', 'transcript'])
+    assert watch.main() == 0
+    assert '[00:00] hello there' in capsys.readouterr().out
