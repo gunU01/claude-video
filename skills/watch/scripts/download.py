@@ -100,6 +100,10 @@ def select_caption(info: dict, language: str = 'auto') -> dict | None:
     youtube = str(info.get('extractor_key') or info.get('extractor') or '').lower().startswith('youtube')
     originals = sorted(k for k in automatic if youtube and k.endswith('-orig'))
     original = originals[0][:-5] if len(originals) == 1 else None
+    if original is None and originals:
+        # Several ASR originals (e.g. mixed-language audio): trust the declared video language.
+        declared = str(info.get('language') or '').split('-')[0]
+        original = next((o[:-5] for o in originals if declared and o[:-5].split('-')[0] == declared), None)
     target = language if language != 'auto' else original or info.get('language')
     def matches(key):
         base = key.removesuffix('-orig')
@@ -116,7 +120,7 @@ def select_caption(info: dict, language: str = 'auto') -> dict | None:
             key = keys[0]
             # Auto mode must prefer original ASR to translated/dubbed metadata.
             if kind == 'automatic' and language == 'auto' and originals:
-                key = originals[0]
+                key = next((o for o in originals if original and o[:-5].split('-')[0] == original.split('-')[0]), originals[0])
             base = key.removesuffix('-orig')
             provenance = 'original' if original and base.split('-')[0] == original.split('-')[0] else 'unknown'
             if language != 'auto' and original and base.split('-')[0] != original.split('-')[0]:
