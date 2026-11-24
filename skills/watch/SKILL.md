@@ -37,8 +37,8 @@ python3 "${SKILL_DIR}/scripts/setup.py" --json
 
 **Question 1 — "How should watch view videos?"**
 
-- `gemini` (recommended) — Google's Gemini model watches the whole video, including audio, and answers directly. Needs a free key from https://aistudio.google.com/apikey. YouTube URLs are sent to Google; local or downloaded videos are uploaded to Google, then deleted after the answer.
-- `local` — frames + transcript extracted on this machine and read by you. No key needed.
+- `gemini` — Google's Gemini model watches the whole video, including audio, and answers directly. Needs a free key from https://aistudio.google.com/apikey. YouTube URLs are sent to Google; local or downloaded videos are uploaded to Google, then deleted after the answer.
+- `local` (recommended in this fork) — frames + transcript extracted on this machine and read by you. No key needed.
 
 If `gemini`, run:
 
@@ -56,8 +56,8 @@ Never print the key or put it in a shell command. Once it is saved, rerun `setup
 Ask for the default detail, lightest to heaviest:
 
 1. `transcript`: no frames; skip media download when captions are available.
-2. `efficient`: fast keyframe selection, cap 50.
-3. `balanced` (recommended): scene-aware frames, cap 100.
+2. `efficient` (recommended in this fork): fast keyframe selection, cap 50.
+3. `balanced`: scene-aware frames, cap 100.
 4. `token-burner`: scene-aware, uncapped; high image cost.
 
 If the detail question is skipped, retain `efficient` (this fork's default).
