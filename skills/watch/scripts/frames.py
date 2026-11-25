@@ -35,10 +35,13 @@ MAX_READ_DIMENSION = 1998
 # Frame-delta dedup: downscale each frame to a DEDUP_THUMB x DEDUP_THUMB
 # RGB thumbnail and treat two frames as near-identical when their mean
 # per-channel difference (0-255) is at or below DEDUP_THRESHOLD. This catches
-# held slides, but subtle code/text changes can be missed at this thumbnail size. Unlike a within-frame
-# perceptual hash, this distinguishes flat frames (solid slides, fades) by color.
+# held slides. Unlike a within-frame perceptual hash, this distinguishes flat
+# frames (solid slides, fades) by color. A line of text on a flat background
+# barely moves the mean, so a frame is also kept when any single thumbnail
+# value differs by more than DEDUP_MAX_DELTA from the last kept frame.
 DEDUP_THUMB = 16
 DEDUP_THRESHOLD = 2.0
+DEDUP_MAX_DELTA = 40
 SHOWINFO_TS_RE = re.compile(r"pts_time:([^\s]+)")
 
 
@@ -425,6 +428,14 @@ def _frame_delta(a: bytes, b: bytes) -> float:
     return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
 
 
+def _frame_max_delta(a: bytes, b: bytes) -> int:
+    """Largest absolute difference (0-255) in any one thumbnail value.
+    Catches a small region that changed, such as a new line of text."""
+    if not a or len(a) != len(b):
+        return 255
+    return max(abs(x - y) for x, y in zip(a, b))
+
+
 def _thumb_frames(paths: list[Path]) -> list[bytes]:
     """Decode every frame in ``paths`` to a small RGB thumbnail via one
     ffmpeg pass over the JPEG sequence.
@@ -486,8 +497,8 @@ def dedupe_perceptual(
 def _dedupe_by_deltas(
     candidates: list[dict], thumbs: list[bytes], threshold: float = DEDUP_THRESHOLD
 ) -> tuple[list[dict], int]:
-    """Greedily drop frames within ``threshold`` mean per-pixel difference of the
-    last *kept* frame. Deletes dropped JPEGs and reindexes survivors 0..n-1 (same
+    """Greedily drop frames within ``threshold`` mean per-pixel difference (and
+    within ``DEDUP_MAX_DELTA`` for any single value) of the last *kept* frame. Deletes dropped JPEGs and reindexes survivors 0..n-1 (same
     cleanup contract as :func:`_even_sample`). Fail-open: if ``thumbs`` does not
     line up 1:1 with ``candidates``, return them unchanged.
     """
@@ -498,7 +509,7 @@ def _dedupe_by_deltas(
     last = thumbs[0]
     dropped: list[dict] = []
     for cand, thumb in zip(candidates[1:], thumbs[1:]):
-        if _frame_delta(thumb, last) <= threshold:
+        if _frame_delta(thumb, last) <= threshold and _frame_max_delta(thumb, last) <= DEDUP_MAX_DELTA:
             dropped.append(cand)
         else:
             kept.append(cand)
