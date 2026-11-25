@@ -74,10 +74,51 @@ def parse_vtt(path: str) -> list[dict]:
                 break
             payload.append(lines[i])
             i += 1
-        text = ' '.join(html.unescape(TAG_RE.sub('', part)).strip() for part in payload).strip()
+        cleaned = [html.unescape(TAG_RE.sub('', part)).strip() for part in payload]
+        lines_ = [part for part in cleaned if part]
+        text = ' '.join(cleaned).strip()
         if text and end >= start:
-            segments.append({'start': start, 'end': end, 'text': text, '_display': display})
+            segments.append({'start': start, 'end': end, 'text': text, '_display': display, '_lines': lines_})
+    segments = _drop_rolling_carryover(segments)
     return [{k: s[k] for k in ('start', 'end', 'text')} for s in _dedupe(segments)]
+
+
+ROLLING_GAP = 0.1  # seconds; rolling cues start where the previous one ends
+
+
+def _carryover(prev: dict, seg: dict) -> int:
+    """Number of leading lines of ``seg`` that repeat the tail of ``prev``."""
+    if seg.get('_display') != prev.get('_display') or seg['start'] > prev['end'] + ROLLING_GAP:
+        return 0
+    a, b = prev['_lines'], seg['_lines']
+    for k in range(min(len(a), len(b)), 0, -1):
+        if a[-k:] == b[:k]:
+            return k
+    return 0
+
+
+def _drop_rolling_carryover(segments: list[dict]) -> list[dict]:
+    """Remove lines that rolling (auto) captions repeat from the previous cue.
+
+    YouTube auto-captions show two lines and slide them: each cue repeats the
+    previous cue's last line and a short cue freezes it again, so every line is
+    stored two or three times. A file is treated as rolling only if some cue
+    carries over a line from a cue that already had two lines, so plain
+    captions that legitimately repeat a phrase are left alone.
+    """
+    rolling = any(
+        _carryover(prev, seg) and max(len(prev['_lines']), len(seg['_lines'])) >= 2
+        for prev, seg in zip(segments, segments[1:])
+    )
+    if not rolling:
+        return segments
+    out = []
+    for prev, seg in zip([None] + segments[:-1], segments):
+        k = _carryover(prev, seg) if prev else 0
+        remaining = seg['_lines'][k:]
+        if remaining:
+            out.append({**seg, 'text': ' '.join(remaining), '_lines': remaining})
+    return out
 
 
 def _dedupe(segments: list[dict]) -> list[dict]:

@@ -155,3 +155,15 @@ def test_actual_ytdlp_exact_track_with_inherited_all(monkeypatch, tmp_path, stat
 def test_explicit_regional_language_is_not_silently_replaced():
     assert download.select_caption({'subtitles': _tracks('en-US')}, 'en-GB') is None
     assert download.select_caption({'subtitles': _tracks('en-US')}, 'en')['key'] == 'en-US'
+
+
+def test_multiple_asr_originals_follow_the_declared_language():
+    info = {'extractor_key': 'Youtube', 'language': 'ko',
+            'automatic_captions': _tracks('en-US-orig', 'ko-orig', 'ko', 'en-US')}
+    track = download.select_caption(info)
+    assert track['key'] == 'ko-orig' and track['language'] == 'ko' and track['provenance'] == 'original'
+
+
+def test_multiple_asr_originals_without_declared_language_keep_first():
+    info = {'extractor_key': 'Youtube', 'automatic_captions': _tracks('en-US-orig', 'ko-orig')}
+    assert download.select_caption(info)['key'] == 'en-US-orig'

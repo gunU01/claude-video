@@ -30,7 +30,7 @@ def test_release_versions_match_canonical_skill():
 def test_copied_skill_runs_outside_repository(tmp_path, static_clip):
     target = tmp_path / 'other host' / 'watch'
     shutil.copytree(ROOT / 'skills/watch', target, ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
-    result = subprocess.run([sys.executable, str(target / 'scripts/watch.py'), str(static_clip), '--no-whisper', '--out-dir', str(tmp_path / 'output')],
+    result = subprocess.run([sys.executable, str(target / 'scripts/watch.py'), str(static_clip), '--no-whisper', '--detail', 'balanced', '--out-dir', str(tmp_path / 'output')],
                             capture_output=True, encoding='utf-8', env=dict(os.environ))
     assert result.returncode == 0, result.stderr
     assert '**Detail:** balanced' in result.stdout and 'reason=uniform' in result.stdout

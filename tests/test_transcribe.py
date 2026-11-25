@@ -38,3 +38,24 @@ def test_overlapping_separate_display_regions_are_not_merged(tmp_path):
     out = parse(tmp_path, 'WEBVTT\n\n00:00.000 --> 00:02.000 line:10%\nHello\n\n00:01.000 --> 00:03.000 line:90%\nHello\n')
     assert len(out) == 2
     assert all(set(s) == {'start', 'end', 'text'} for s in out)
+
+
+ROLLING = (
+    'WEBVTT\n\n'
+    '00:00.000 --> 00:02.000 align:start position:0%\n \nfirst line <00:00.500><c>here</c>\n\n'
+    '00:02.000 --> 00:02.050 align:start position:0%\nfirst line here\n \n\n'
+    '00:02.050 --> 00:04.000 align:start position:0%\nfirst line here\n second line <00:03.000><c>now</c>\n\n'
+    '00:04.000 --> 00:04.050 align:start position:0%\nsecond line now\n \n\n'
+    '00:04.050 --> 00:06.000 align:start position:0%\nsecond line now\n third line\n'
+)
+
+
+def test_rolling_auto_captions_keep_each_line_once(tmp_path):
+    out = parse(tmp_path, ROLLING)
+    assert [s['text'] for s in out] == ['first line here', 'second line now', 'third line']
+    assert [s['start'] for s in out] == [0.0, 2.05, 4.05]
+
+
+def test_plain_repeated_phrase_survives_in_non_rolling_captions(tmp_path):
+    out = parse(tmp_path, 'WEBVTT\n\n00:00.000 --> 00:01.000\nNo.\n\n00:01.000 --> 00:02.000\nNo.\n')
+    assert [s['text'] for s in out] == ['No.', 'No.']
