@@ -171,3 +171,21 @@ def test_equal_brightness_different_colors_survive(tmp_path):
         paths.append({'index': index, 'timestamp_seconds': index, 'path': str(path), 'reason': 'test'})
     out, dropped = frames.dedupe_perceptual(paths)
     assert len(out) == 2 and dropped == 1
+
+
+def test_dedupe_keeps_frame_with_small_local_change(tmp_path: Path):
+    """A new line of text barely moves the mean but changes a few pixels a lot."""
+    cands = _touch(tmp_path, 2)
+    a = bytes([255] * 300)
+    b = bytes([255] * 297 + [150] * 3)  # mean diff ~1.05, max diff 105
+    assert frames._frame_delta(a, b) <= 2.0
+    survivors, dropped = frames._dedupe_by_deltas(cands, [a, b], threshold=2.0)
+    assert dropped == 0 and len(survivors) == 2
+
+
+def test_dedupe_still_drops_low_noise(tmp_path: Path):
+    cands = _touch(tmp_path, 2)
+    a = bytes([100] * 300)
+    b = bytes([100] * 150 + [103] * 150)  # mean 1.5, max 3
+    survivors, dropped = frames._dedupe_by_deltas(cands, [a, b], threshold=2.0)
+    assert dropped == 1 and len(survivors) == 1
