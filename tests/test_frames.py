@@ -1,6 +1,7 @@
 """Keyframe engine + preserved scene/uniform fallbacks."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import frames
@@ -140,3 +141,36 @@ def test_single_frame_cap_keeps_first_real_frame(static_clip, tmp_path):
 def test_uniform_candidate_count_includes_deduplicated_frames(static_clip, tmp_path):
     out, meta = frames.extract_scene_or_uniform(str(static_clip), tmp_path / 'f', fps=2, target_frames=6)
     assert meta['candidate_count'] == len(out) + meta['deduped_count']
+
+
+@pytest.fixture
+def long_gap_clip(cut_clip: Path, tmp_path: Path) -> Path:
+    """Enough cuts for the scene engine, then ~6s with no cut."""
+    path = tmp_path / "long_gap.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-i", str(cut_clip),
+        "-vf", "tpad=stop_mode=clone:stop_duration=6", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path),
+    ], check=True)
+    return path
+
+
+@pytest.mark.parametrize("end_seconds", [None, 11.0])
+def test_scene_long_gap_falls_back_to_uniform(long_gap_clip, tmp_path, monkeypatch, end_seconds):
+    monkeypatch.setattr(frames, "SCENE_MAX_GAP", 3.0)
+    out, meta = frames.extract_scene_or_uniform(
+        str(long_gap_clip), tmp_path / "f", fps=2.0, target_frames=20, max_frames=100,
+        end_seconds=end_seconds, dedup=False,
+    )
+    assert meta["engine"] == "uniform"
+    assert meta["fallback"] is True
+    assert out[-1]["timestamp_seconds"] > 8.0  # the cut-free tail is covered
+    assert len(out) == len(list((tmp_path / "f").glob("frame_*.jpg")))
+
+
+def test_scene_long_gap_kept_when_uncapped(long_gap_clip, tmp_path, monkeypatch):
+    """token-burner keeps every detected shot; a uniform fallback would cap them."""
+    monkeypatch.setattr(frames, "SCENE_MAX_GAP", 3.0)
+    _, meta = frames.extract_scene_or_uniform(
+        str(long_gap_clip), tmp_path / "f", fps=2.0, target_frames=20, max_frames=None,
+    )
+    assert meta["engine"] == "scene"
