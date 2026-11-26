@@ -251,7 +251,7 @@ Local inference has no default timeout; `WATCH_WHISPERX_TIMEOUT` accepts positiv
 |---|---|---|
 | `transcript` | Transcript only; cue frames can be requested explicitly | No regular frames |
 | `efficient` | Fast keyframes; uniform fallback when sparse | 50 |
-| `balanced` | Scene changes; uniform fallback on nearly static clips | 100 |
+| `balanced` | Scene changes; uniform fallback on nearly static clips or gaps over 60s | 100 |
 | `token-burner` | Scene changes without a count cap; warning above 250 | Uncapped |
 
 Use `WATCH_DETAIL` for the saved preference or `--detail` for one run. The `/watch` examples below are shorthand: in Claude Code plugins, select `/watch:watch`; in other hosts, ask the watch skill to apply the same options. Best accuracy is usually with videos under 10 minutes or a focused interval:

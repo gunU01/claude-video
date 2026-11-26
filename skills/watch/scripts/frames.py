@@ -28,6 +28,10 @@ SCENE_THRESHOLD = 0.20
 # this is a low floor — NOT the frame budget — so normal videos with cuts use
 # the (single-pass) scene engine instead of paying for a wasted second decode.
 SCENE_MIN_FRAMES = 8
+# Capped scene selection falls back to uniform when it leaves a longer stretch
+# (seconds) than this without a detected cut. Graphics on a flat background can
+# change completely while scoring far below SCENE_THRESHOLD.
+SCENE_MAX_GAP = 60.0
 # Below this many decoded keyframes a clip is too sparse for keyframe coverage
 # (very short or oddly encoded), so the cheap tier falls back to uniform.
 KEYFRAME_MIN = 4
@@ -536,8 +540,9 @@ def extract_scene_or_uniform(
     end_seconds: float | None = None,
     dedup: bool = True,
 ) -> tuple[list[dict], dict]:
-    """Prefer scene selection, falling back to uniform only when the video is
-    effectively static (fewer than ``SCENE_MIN_FRAMES`` detected shots).
+    """Prefer scene selection, falling back to uniform when the video is
+    effectively static (fewer than ``SCENE_MIN_FRAMES`` detected shots) or,
+    for capped runs, when cuts leave a gap over ``SCENE_MAX_GAP`` seconds.
 
     Scene cuts are detected across the *whole* range (uncapped), near-identical
     frames are dropped (:func:`dedupe_perceptual`, unless ``dedup`` is False),
@@ -557,7 +562,15 @@ def extract_scene_or_uniform(
         end_seconds=end_seconds,
     )
     scene_count = len(scene_frames)
-    if scene_count >= SCENE_MIN_FRAMES:
+    long_gap = False
+    # Uncapped runs keep every detected shot; uniform would cap them.
+    if max_frames is not None and scene_count >= SCENE_MIN_FRAMES:
+        range_end = end_seconds
+        if range_end is None:
+            range_end = get_metadata(video_path)["duration_seconds"]
+        stamps = [start_seconds or 0.0, *(f["timestamp_seconds"] for f in scene_frames), range_end]
+        long_gap = max(b - a for a, b in zip(stamps, stamps[1:])) > SCENE_MAX_GAP
+    if scene_count >= SCENE_MIN_FRAMES and not long_gap:
         deduped, n_dropped = dedupe_perceptual(scene_frames) if dedup else (scene_frames, 0)
         cap = len(deduped) if max_frames is None else max_frames
         selected = _even_sample(deduped, cap)
